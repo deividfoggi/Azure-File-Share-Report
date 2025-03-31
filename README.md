@@ -1,8 +1,8 @@
 # README.md
 
-# Console Application
+# Azure File Share Report
 
-This is a simple console application built in C#. 
+This is a simple console application built in C# to export a list of files properties in a Azure file share.
 
 ## Prerequisites
 To work with this application, ensure you have the following installed on your machine:
