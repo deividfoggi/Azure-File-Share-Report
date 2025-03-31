@@ -42,6 +42,9 @@ After building the application, you can run it using:
 ```
 dotnet run
 ```
+The console will ask for the storage account connection string, paste it and press enter. Repeat when asked for share name.
+
+The results will be printed in the console and in a csv file in the running directory.
 
 ## Project Structure
 
