@@ -1,3 +1,7 @@
 bin
 obj
 .DS_Store
+*.csv
+launch.json
+tasks.json
+.vscode
