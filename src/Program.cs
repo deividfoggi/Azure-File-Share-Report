@@ -18,7 +18,7 @@ namespace AzureFileShareReport
         // Thread and concurrency settings
         private static readonly int THREAD_POOL_MIN_THREADS = 5000;
         private static readonly int CONNECTION_LIMIT = 2000;
-        private static readonly int MAX_CONCURRENT_TASKS = 5000;
+        private static readonly int MAX_CONCURRENT_TASKS = 10000;
         
         // Batch processing settings
         private static readonly int BATCH_INITIAL_CAPACITY = 100000;
@@ -37,7 +37,7 @@ namespace AzureFileShareReport
         private static readonly int MAX_PROCESSING_TIMES = 2000;
         
         // Display settings
-        private static readonly TimeSpan DIAGNOSTIC_INTERVAL = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan DIAGNOSTIC_INTERVAL = TimeSpan.FromSeconds(2);
         private static readonly TimeSpan PROGRESS_UPDATE_INTERVAL = TimeSpan.FromSeconds(2);
         private static readonly TimeSpan SCAN_PROGRESS_UPDATE_INTERVAL = TimeSpan.FromMilliseconds(500);
         #endregion
