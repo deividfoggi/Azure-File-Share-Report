@@ -17,8 +17,8 @@ namespace AzureFileShareReport
         #region Performance Configuration Parameters
         // Thread and concurrency settings
         private static readonly int THREAD_POOL_MIN_THREADS = 1000; // Reduced from 8000 (over-allocation)
-        private static readonly int CONNECTION_LIMIT = 3000; // Reduced from 10000
-        private static readonly int MAX_CONCURRENT_TASKS = 3000; // Reduced from 10000
+        private static readonly int CONNECTION_LIMIT = 2000; // Reduced from 10000
+        private static readonly int MAX_CONCURRENT_TASKS = 2000; // Reduced from 10000
         
         // Batch processing settings - increase throughput per batch
         private static readonly int BATCH_INITIAL_CAPACITY = 100000; // Keep as is
@@ -88,7 +88,17 @@ namespace AzureFileShareReport
             File.WriteAllText(fileName, "ShareName,Directory,File Name,Size (bytes),Last Write,Last Modified,Created On\n");
 
             // Create or clear error log file
-            File.WriteAllText(ERROR_LOG_FILE, $"Azure File Share Report Error Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}{Environment.NewLine}");
+            try
+            {
+                // Use absolute path to avoid any path resolution issues
+                string absoluteLogPath = Path.GetFullPath(ERROR_LOG_FILE);
+                File.WriteAllText(absoluteLogPath, $"Azure File Share Report Error Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}{Environment.NewLine}");
+                Console.WriteLine($"Error log will be written to: {absoluteLogPath}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"WARNING: Cannot write to error log file: {ex.Message}");
+            }
 
             ShareClient share = new ShareClient(connectionString, shareName);
             ShareDirectoryClient rootDirectory = share.GetRootDirectoryClient();
@@ -270,8 +280,8 @@ namespace AzureFileShareReport
                 catch (Exception ex)
                 {
                     string errorMessage = $"Error processing directory {currentDirectory.Path}: {ex.Message}";
-                    Console.WriteLine(errorMessage);
-                    await LogFileProcessingAsync(errorMessage);
+                    Interlocked.Increment(ref _errorCount);
+                    await LogFileProcessingAsync(errorMessage); // Make sure this is called
                 }
             }
         }
@@ -373,11 +383,17 @@ namespace AzureFileShareReport
             }
             catch (Exception ex)
             {
+                string errorMessage = $"Error processing file {item.Name}: {ex.Message}";
                 Interlocked.Increment(ref _errorCount);
                 
-                if (!(ex is OperationCanceledException))
+                // Try async first, then sync if that fails
+                try
                 {
-                    await LogFileProcessingAsync($"Error processing file {item.Name}: {ex.Message}");
+                    await LogFileProcessingAsync(errorMessage);
+                }
+                catch
+                {
+                    LogFileProcessingSync(errorMessage);
                 }
             }
         }
@@ -513,16 +529,28 @@ namespace AzureFileShareReport
             {
                 Console.WriteLine($"[File Processing Log] {message}");
                 
-                // Log to file as well
+                // Log to file with better error handling
                 try
                 {
-                    // Use simple file append for error logging - no need for semaphore as error volume is typically low
-                    File.AppendAllText(ERROR_LOG_FILE, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}{Environment.NewLine}");
+                    // Ensure directory exists
+                    string directory = Path.GetDirectoryName(ERROR_LOG_FILE);
+                    if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+                    
+                    // Use FileStream with proper sharing mode for better reliability
+                    using (FileStream fs = new FileStream(ERROR_LOG_FILE, FileMode.Append, FileAccess.Write, FileShare.Read))
+                    using (StreamWriter writer = new StreamWriter(fs))
+                    {
+                        await writer.WriteLineAsync($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}");
+                        await writer.FlushAsync();
+                    }
                 }
                 catch (Exception ex)
                 {
-                    // If logging itself fails, just output to console
-                    Console.WriteLine($"Error writing to log file: {ex.Message}");
+                    // If logging itself fails, output details to console
+                    Console.WriteLine($"Error writing to log file: {ex.GetType().Name}: {ex.Message}");
                 }
             }
             finally
@@ -530,6 +558,19 @@ namespace AzureFileShareReport
                 _consoleSemaphore.Release();
             }
         }
+
+        private static void LogFileProcessingSync(string message)
+        {
+            try
+            {
+                File.AppendAllText(ERROR_LOG_FILE, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}{Environment.NewLine}");
+            }
+            catch
+            {
+                // Last resort - can't do much if this fails
+            }
+        }
+
         private static string FormatFileSize(long bytes)
         {
             if (bytes < 1024) return $"{bytes} B";
