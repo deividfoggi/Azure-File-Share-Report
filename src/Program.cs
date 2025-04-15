@@ -16,30 +16,32 @@ namespace AzureFileShareReport
     {
         #region Performance Configuration Parameters
         // Thread and concurrency settings
-        private static readonly int THREAD_POOL_MIN_THREADS = 5000;
-        private static readonly int CONNECTION_LIMIT = 2000;
-        private static readonly int MAX_CONCURRENT_TASKS = 10000;
+        private static readonly int THREAD_POOL_MIN_THREADS = 1000; // Reduced from 8000 (over-allocation)
+        private static readonly int CONNECTION_LIMIT = 1500; // Reduced from 10000
+        private static readonly int MAX_CONCURRENT_TASKS = 1500; // Reduced from 10000
         
-        // Batch processing settings
-        private static readonly int BATCH_INITIAL_CAPACITY = 100000;
-        private static readonly int BATCH_FLUSH_THRESHOLD = 40000;
-        private static readonly int FILE_WRITE_BUFFER_SIZE = 8 * 1024 * 1024; // 8MB buffer
+        // Batch processing settings - increase throughput per batch
+        private static readonly int BATCH_INITIAL_CAPACITY = 100000; // Keep as is
+        private static readonly int BATCH_FLUSH_THRESHOLD = 100000; // Increased from 10000
+        private static readonly int FILE_WRITE_BUFFER_SIZE = 32 * 1024 * 1024; // Increased to 32MB
         
         // Timeout settings
-        private static readonly TimeSpan API_TIMEOUT = TimeSpan.FromSeconds(10);
-        private static readonly TimeSpan DIRECTORY_LIST_TIMEOUT = TimeSpan.FromSeconds(60);
-        private static readonly TimeSpan SEMAPHORE_WAIT_TIMEOUT = TimeSpan.FromMilliseconds(20);
-        private static readonly TimeSpan TASK_POLL_INTERVAL = TimeSpan.FromMilliseconds(25);
+        private static readonly TimeSpan API_TIMEOUT = TimeSpan.FromSeconds(20);
+        private static readonly TimeSpan DIRECTORY_LIST_TIMEOUT = TimeSpan.FromSeconds(120);
+        private static readonly TimeSpan SEMAPHORE_WAIT_TIMEOUT = TimeSpan.FromMilliseconds(20); // From 5ms
+        private static readonly TimeSpan TASK_POLL_INTERVAL = TimeSpan.FromMilliseconds(5); // From 10ms
         
-        // Task management settings
-        private static readonly int TASK_CLEANUP_FREQUENCY = 40;
-        private static readonly int MAX_SEMAPHORE_RETRIES = 50;
+        // Task management - optimize task handling
+        private static readonly int TASK_CLEANUP_FREQUENCY = 50; // From 10 
+        private static readonly int MAX_SEMAPHORE_RETRIES = 20; // From 50
         private static readonly int MAX_PROCESSING_TIMES = 2000;
         
         // Display settings
         private static readonly TimeSpan DIAGNOSTIC_INTERVAL = TimeSpan.FromSeconds(2);
         private static readonly TimeSpan PROGRESS_UPDATE_INTERVAL = TimeSpan.FromSeconds(2);
         private static readonly TimeSpan SCAN_PROGRESS_UPDATE_INTERVAL = TimeSpan.FromMilliseconds(500);
+
+        private static readonly string ERROR_LOG_FILE = "error_log.txt";
         #endregion
         
         #region Application State Variables
@@ -84,6 +86,9 @@ namespace AzureFileShareReport
 
             string fileName = string.Format("results_{0}.csv", DateTime.Now.ToString("yyyyMMdd_HHmmss"));
             File.WriteAllText(fileName, "ShareName,Directory,File Name,Size (bytes),Last Write,Last Modified,Created On\n");
+
+            // Create or clear error log file
+            File.WriteAllText(ERROR_LOG_FILE, $"Azure File Share Report Error Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}{Environment.NewLine}");
 
             ShareClient share = new ShareClient(connectionString, shareName);
             ShareDirectoryClient rootDirectory = share.GetRootDirectoryClient();
@@ -172,7 +177,9 @@ namespace AzureFileShareReport
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error counting items in {directoryClient.Path}: {ex.Message}");
+                string errorMessage = $"Error counting items in {directoryClient.Path}: {ex.Message}";
+                Console.WriteLine(errorMessage);
+                await LogFileProcessingAsync(errorMessage);
             }
         }
 
@@ -242,7 +249,7 @@ namespace AzureFileShareReport
                                     break;
                                 }
                                 
-                                await Task.Delay(50); // Wait a bit before retrying
+                                await Task.Delay(5); // Wait a bit before retrying
                             }
                         }
                         
@@ -262,7 +269,9 @@ namespace AzureFileShareReport
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error processing directory {currentDirectory.Path}: {ex.Message}");
+                    string errorMessage = $"Error processing directory {currentDirectory.Path}: {ex.Message}";
+                    Console.WriteLine(errorMessage);
+                    await LogFileProcessingAsync(errorMessage);
                 }
             }
         }
@@ -503,6 +512,18 @@ namespace AzureFileShareReport
             try
             {
                 Console.WriteLine($"[File Processing Log] {message}");
+                
+                // Log to file as well
+                try
+                {
+                    // Use simple file append for error logging - no need for semaphore as error volume is typically low
+                    File.AppendAllText(ERROR_LOG_FILE, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}{Environment.NewLine}");
+                }
+                catch (Exception ex)
+                {
+                    // If logging itself fails, just output to console
+                    Console.WriteLine($"Error writing to log file: {ex.Message}");
+                }
             }
             finally
             {
