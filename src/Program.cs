@@ -18,7 +18,7 @@ namespace AzureFileShareReport
         // Thread and concurrency settings
         private static readonly int THREAD_POOL_MIN_THREADS = 1000; // Reduced from 8000 (over-allocation)
         private static readonly int CONNECTION_LIMIT = 2000; // Reduced from 10000
-        private static readonly int MAX_CONCURRENT_TASKS = 2000; // Reduced from 10000
+        private static readonly int MAX_CONCURRENT_TASKS = 2000; // Reduced from 10000 make sure it is not greater than CONNECTION_LIMIT otherwise it will be limited by the connection limit
         
         // Batch processing settings - increase throughput per batch
         private static readonly int BATCH_INITIAL_CAPACITY = 100000; // Keep as is
